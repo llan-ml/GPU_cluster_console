@@ -1,0 +1,12 @@
+kubernetes:
+  namespace: default
+  name: test
+  num_gpus: 4
+tensorflow:
+  user_model_file: example_user_model.py
+  learning_rate: 0.01
+  max_step: 1e5
+  batch_size: 128
+  optimizer: sgd
+data:
+  data_dir: ./examples/data

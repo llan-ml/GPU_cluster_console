@@ -1,0 +1,43 @@
+{%- set namespace = properties["namespace"] -%}
+{%- set name = properties["name"] -%}
+
+#!/bin/bash
+
+pushd ./k8s_config
+if [[ ! $(kubectl get namespaces | grep {{ namespace }}) ]]; then
+  kubectl create -f namespace.yaml
+fi
+
+#MASTER_IP=`perl -n -e '/server: http:\/\/(.*):/ && print "$1"' ${HOME}/.kube/config`
+MASTER_IP="192.168.0.2"
+mv nfs.yaml nfs.yaml.tmp
+home=${HOME//\//\\/}
+sed "s/HOME_DIR_PLACEHOLDER/${home}/g" nfs.yaml.tmp 1>nfs.yaml 2>/dev/null
+rm nfs.yaml.tmp
+mv nfs.yaml nfs.yaml.tmp
+sed "s/kubernetes.io\/hostname:.*$/kubernetes.io\/hostname: ${MASTER_IP}/g" nfs.yaml.tmp 1>nfs.yaml 2>/dev/null
+rm nfs.yaml.tmp
+kubectl create -f nfs.yaml
+
+attempt=0
+while true; do
+  nfs_server_cluster_ip=`kubectl get services {{ name }}-nfs-server --namespace={{ namespace }} -o=jsonpath={.spec.clusterIP}`
+  if [[ "$?" == 0 ]]; then
+    break
+  else
+    if (( attempt > 10 )); then
+      echo "Timeout. NFS SERVER ERROR!"
+      exit 2
+    fi
+    attempt=$((attempt+1))
+    sleep 3
+  fi
+done
+
+kubectl create -f cluster_svc.yaml
+mv cluster_job.yaml cluster_job.yaml.tmp
+sed "s/server:.*$/server: ${nfs_server_cluster_ip}/g" cluster_job.yaml.tmp 1>cluster_job.yaml 2>/dev/null
+rm cluster_job.yaml.tmp
+kubectl create -f cluster_job.yaml
+
+popd

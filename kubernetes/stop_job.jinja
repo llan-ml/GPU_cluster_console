@@ -1,0 +1,16 @@
+{%- set namespace = properties["namespace"] -%}
+
+#!/bin/bash
+
+pushd ./k8s_config
+
+kubectl delete -f cluster_job.yaml
+kubectl delete -f cluster_svc.yaml
+kubectl delete -f nfs.yaml
+if [[ {{ namespace }} != "default" ]]; then
+  if [[ ! $(kubectl get pods --namespace={{ namespace }} | grep NAME &>/dev/null) ]]; then
+    kubectl delete -f namespace.yaml
+  fi
+fi
+
+popd

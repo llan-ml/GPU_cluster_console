@@ -1,0 +1,87 @@
+{%- set namespace = properties["namespace"] -%}
+{%- set name = properties["name"] -%}
+{%- set image = properties["tf_image"] -%}
+
+{%- set ps_replicas = properties["ps_replicas"] -%}
+{%- set worker_replicas = properties["worker_replicas"] -%}
+{%- set replicas = {"ps": ps_replicas, "worker": worker_replicas} -%}
+
+{%- set parameters = properties["parameters"] -%}
+
+{%- set job_port = properties["job_port"] -%}
+{%- set nvidia_driver_version = properties["nvidia_driver_version"] -%}
+
+
+{#- Function to get host address -#}
+{%- macro ps_hosts() -%}
+  {%- for i in range(ps_replicas) -%}
+    {%- if not loop.first -%},{%- endif -%}
+    "{{ name }}-ps-{{ i }}:{{ job_port }}"
+  {%- endfor -%}
+{%- endmacro -%}
+
+{%- macro worker_hosts() -%}
+  {%- for i in range(worker_replicas) -%}
+    {%- if not loop.first -%},{%- endif -%}
+    "{{ name }}-worker-{{ i }}:{{ job_port }}"
+  {%- endfor -%}
+{%- endmacro -%}
+
+{#- Template of Pod #}
+{% for job in ["ps", "worker"] -%}
+{%- for i in range(replicas[job]) %}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ name }}-{{ job }}-{{ i }}
+  namespace: {{ namespace }}
+spec:
+  parallelism: 1
+  template:
+    metadata:
+      labels:
+        name: {{ name }}
+        job: {{ job }}
+        task: "{{ i }}"
+    spec:
+      volumes:
+      - name: nvidia-driver
+        hostPath:
+          path: /var/lib/nvidia-docker/volumes/nvidia_driver/{{ nvidia_driver_version }}
+      - name: nfs
+        nfs:
+          server: 
+          path: /exports
+      restartPolicy: Never
+      containers:
+      - name: {{ job }}-{{i}}
+        image: {{ image }}
+{%- for key, value in parameters -%}
+{%- if loop.first %}
+        args:
+{%- endif %}
+        - "--{{ key }} {{ value }}"
+{%- endfor %}
+        ports:
+        - containerPort: {{ job_port }}
+        env:
+        - name: CLUSTER_SPEC
+          value: '{"ps": [{{ ps_hosts() }}], "worker": [{{ worker_hosts() }}]}'
+        - name: JOB_NAME
+          value: {{ job }}
+        - name: TASK_INDEX
+          value: "{{ i }}"
+{%- if job == "worker" %}
+        resources:
+          limits:
+            alpha.kubernetes.io/nvidia-gpu: 1
+{%- endif %}
+        volumeMounts:
+        - name: nvidia-driver
+          mountPath: /usr/local/nvidia/
+          readOnly: true
+        - name: nfs
+          mountPath: /mnt
+{%- endfor -%}
+{%- endfor %}

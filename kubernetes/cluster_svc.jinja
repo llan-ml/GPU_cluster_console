@@ -1,0 +1,28 @@
+{%- set namespace = properties["namespace"] -%}
+{%- set name = properties["name"] -%}
+
+{%- set ps_replicas = properties["ps_replicas"] -%}
+{%- set worker_replicas = properties["worker_replicas"] -%}
+{%- set replicas = {"ps": ps_replicas, "worker": worker_replicas} -%}
+
+{%- set job_port = properties["job_port"] -%}
+
+{#- Template of Service -#}
+{%- for job in ["ps", "worker"] -%}
+{%- for i in range(replicas[job]) -%}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ name }}-{{ job }}-{{ i }}
+  namespace: {{ namespace }}
+spec:
+  selector:
+    name: {{ name }}
+    job: {{ job }}
+    task: "{{ i }}"
+  ports:
+  - port: {{ job_port }}
+{% endfor -%}
+{%- endfor -%}
+

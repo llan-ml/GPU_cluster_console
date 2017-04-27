@@ -13,12 +13,14 @@ import os
 import time
 import numpy as np
 import tensorflow as tf
+import tensorlayer as tl
+
+import tf_utils
 
 # Define parameters
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_string("user_model_file", "example_user_model.py",
-                    "The filename of user model.")
+
 flags.DEFINE_float("learning_rate", 0.01,
                    "Initial learnig rate. Default is 0.01.")
 flags.DEFINE_integer("max_step", 1e5,
@@ -40,12 +42,99 @@ flags.DEFINE_integer("summary_period", 30,
 
 FLAGS.max_step = int(FLAGS.max_step)
 
-user_model_imported = os.path.splitext(FLAGS.user_model_file)[0]
-user_model = __import__(user_model_imported)
-
 os.system("mkdir -p {}".format(FLAGS.checkpoint_dir))
 os.system("mkdir -p {}".format(FLAGS.tensorboard_dir))
 
+def get_feed_dict(x, y_, network, FLAGS):
+    X_train, y_train, X_val, y_val, X_test, y_test = \
+        tl.files.load_mnist_dataset(shape=(-1, 28, 28, 1),
+                                    path="./data/")
+    
+    X_train = np.asarray(X_train, dtype=np.float32)
+    y_train = np.asarray(y_train, dtype=np.int64)
+    X_val = np.asarray(X_val, dtype=np.float32)
+    y_val = np.asarray(y_val, dtype=np.int64)
+    X_test = np.asarray(X_test, dtype=np.float32)
+    y_test = np.asarray(y_test, dtype=np.int64)
+    
+    indices = np.arange(len(X_train))
+    np.random.shuffle(indices)
+    start_idx = 0
+    while True:
+        excerpt = np.copy(indices[start_idx: start_idx + FLAGS.batch_size])
+        start_idx += FLAGS.batch_size
+        if start_idx > len(X_train) - FLAGS.batch_size:
+            np.random.shuffle(indices)
+            start_idx = 0
+        feed_dict = {x: X_train[excerpt], y_: y_train[excerpt]}
+#        feed.dict.update(network.all_drop)        
+        yield feed_dict
+
+
+def get_validate_data(x, y_, FLAGS):
+    X_train, y_train, X_val, y_val, X_test, y_test = \
+        tl.files.load_mnist_dataset(shape=(-1, 28, 28, 1), path="./data/")
+    
+    X_train = np.asarray(X_train, dtype=np.float32)    
+    y_train = np.asarray(y_train, dtype=np.int64)
+    X_val = np.asarray(X_val, dtype=np.float32)
+    y_val = np.asarray(y_val, dtype=np.int64)
+    X_test = np.asarray(X_test, dtype=np.float32)
+    y_test = np.asarray(y_test, dtype=np.int64)
+    for this_X_val, this_y_val in tl.iterate.minibatches(
+                                        X_val, y_val,
+                                        batch_size=FLAGS.batch_size,
+                                        shuffle=True):
+        feed_dict = {x: this_X_val, y_: this_y_val}
+        yield feed_dict
+
+def inference(FLAGS):
+    x = tf.placeholder(tf.float32,
+                       shape=[FLAGS.batch_size, 28, 28, 1],
+                       name="x")
+    y_ = tf.placeholder(tf.int64,
+                        shape=[FLAGS.batch_size,],
+                        name="y_")
+    
+    network = tl.layers.InputLayer(x, name="input_layer")
+    network = tl.layers.Conv2dLayer(network,
+                                    act=tf.nn.relu,
+                                    shape=[5, 5, 1, 32],
+                                    strides=[1, 1, 1, 1],
+                                    padding="SAME",
+                                    name="cnn_layer_0")
+    network = tl.layers.PoolLayer(network,
+                                  ksize=[1, 2, 2, 1],
+                                  strides=[1, 2, 2, 1],
+                                  padding="SAME",
+                                  pool=tf.nn.max_pool,
+                                  name="pool_layer_0")
+    network = tl.layers.Conv2dLayer(network,
+                                    act=tf.nn.relu,
+                                    shape=[5, 5, 32, 64],
+                                    strides=[1, 1, 1, 1],
+                                    padding="SAME",
+                                    name="cnn_layer_1")
+    network = tl.layers.PoolLayer(network,
+                                  ksize=[1, 2, 2, 1],
+                                  strides=[1, 2, 2, 1],
+                                  padding="SAME",
+                                  pool=tf.nn.max_pool,
+                                  name="pool_layer_1")
+    network = tl.layers.FlattenLayer(network, name="flatten_layer")
+#    network = tl.layers.DropoutLayer(network, keep=0.5, name="drop_0")
+    network = tl.layers.DenseLayer(network, n_units=256,
+                                   act=tf.nn.relu, name="dense_layer_1")
+#    network = tl.layers.DropoutLayer(network, keep=0.5, name="drop_1")
+    network = tl.layers.DenseLayer(network, n_units=10,
+                                   act=tf.identity, name="output_layer")
+    return [x, y_, network]
+
+def calc_loss(true, pred):
+    return tf.reduce_mean(
+                tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    logits=pred, labels=true))
+    
 def trainer(cost, global_step):
     optimizer = tf.train.GradientDescentOptimizer(
         learning_rate=FLAGS.learning_rate)
@@ -54,9 +143,9 @@ def trainer(cost, global_step):
     
 
 def main(argv=None):        
-    cluster_spec = eval(os.environ.get("CLUSTER_SPEC"))
-    job_name = os.environ.get("JOB_NAME")
-    task_index = int(os.environ.get("TASK_INDEX"))
+    cluster_spec = tf_utils.get_cluster_spec()
+    job_name = tf_utils.get_job_name()
+    task_index = tf_utils.get_task_index()
     
     cluster = tf.train.ClusterSpec(cluster_spec)
     server = tf.train.Server(cluster,
@@ -73,10 +162,10 @@ def main(argv=None):
             cluster=cluster)):
             
             # Build model...
-            x, y_, network = user_model.inference(FLAGS)
+            x, y_, network = inference(FLAGS)
                             
             # Calculate loss...
-            loss = user_model.calc_loss(y_, network.outputs)
+            loss = calc_loss(y_, network.outputs)
             correct_prediction = tf.equal(tf.arg_max(network.outputs, 1), y_)
             accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
             
@@ -111,7 +200,7 @@ def main(argv=None):
                                                 sess.graph)
 
                 step = 0
-                feed_dict_generator = user_model.get_feed_dict(
+                feed_dict_generator = get_feed_dict(
                     x, y_, network, FLAGS)
                 if task_index == 0:
                     next_summary_time = time.time() + FLAGS.summary_period
@@ -124,7 +213,7 @@ def main(argv=None):
                         and next_summary_time < time.time():
                         this_val_accuracy = []
                         this_val_loss = []
-                        for val_feed_dict in user_model.get_validate_data(
+                        for val_feed_dict in get_validate_data(
                                                             x, y_, FLAGS):
                             this_acc, this_loss = sess.run(
                                [accuracy, loss], feed_dict=val_feed_dict)

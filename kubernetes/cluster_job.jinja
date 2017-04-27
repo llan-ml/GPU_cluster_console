@@ -2,11 +2,10 @@
 {%- set name = properties["name"] -%}
 {%- set image = properties["tf_image"] -%}
 
+{%- set train_entrypoint = properties["train_entrypoint"] -%}
 {%- set ps_replicas = properties["ps_replicas"] -%}
 {%- set worker_replicas = properties["worker_replicas"] -%}
 {%- set replicas = {"ps": ps_replicas, "worker": worker_replicas} -%}
-
-{%- set parameters = properties["parameters"] -%}
 
 {%- set job_port = properties["job_port"] -%}
 {%- set nvidia_driver_version = properties["nvidia_driver_version"] -%}
@@ -57,12 +56,8 @@ spec:
       containers:
       - name: {{ job }}-{{i}}
         image: {{ image }}
-{%- for key, value in parameters -%}
-{%- if loop.first %}
         args:
-{%- endif %}
-        - "--{{ key }} {{ value }}"
-{%- endfor %}
+        - "{{ train_entrypoint }}"
         ports:
         - containerPort: {{ job_port }}
         env:

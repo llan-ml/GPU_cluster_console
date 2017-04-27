@@ -24,7 +24,7 @@ def main(args):
         data_config = config["data"]
     except KeyError:
         data_config = {}
-    
+
     num_gpus = k8s_config["num_gpus"]
     k8s_config.pop("num_gpus")
     k8s_config["ps_replicas"] = num_gpus \
@@ -34,23 +34,15 @@ def main(args):
     k8s_args = ["--{} \"{}\"".format(key, value)
         for key, value in k8s_config.iteritems()]
     k8s_args = " ".join(k8s_args) if k8s_args else ""
-    
-    tf_args = [(key, value) for key, value in tf_config.iteritems()]
-    tf_args = "--parameters \"{}\"".format(tf_args) if tf_args else ""
-    render_args = "{} {}".format(k8s_args, tf_args)
-    
+    train_entrypoint_args = "--train_entrypoint \"{}\"".format(
+            os.path.basename(tf_config["train_entrypoint"]))
+    render_args = "{} {}".format(k8s_args, train_entrypoint_args)
     os.system("python ./kubernetes/render.py {}".format(render_args))
-    copy_files = ["./tensorflow/distribute_tf.py"]
-    if "user_model_file" not in tf_config.keys() \
-        or tf_config["user_model_file"] == "example_user_model.py":
-        copy_files.append("./examples/example_user_model.py")
-    else:
-        copy_files.append(tf_config["user_model_file"])
-    if "data_dir" not in data_config.keys() \
-        or data_config["data_dir"] == "./examples/data":
-        copy_files.append("./examples/data")
-    else:
-        copy_files.append(data_config["data_dir"])
+    
+    train_files = tf_config["train_files"]
+    copy_files = train_files.split(",")
+    copy_files.append(data_config["data_dir"])
+    copy_files.append("./tensorflow/*")
 
     work_dir = ROOT_DIR + "../gpu_cluster_storage/{}/{}".format(
                                                 k8s_config["namespace"],

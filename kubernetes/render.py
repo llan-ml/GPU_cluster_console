@@ -65,8 +65,11 @@ if __name__ == "__main__":
         default="train")
     parser.add_argument(
         "--tf_image",
-        default="tensorflow/tf-cluster-train:3.0",
+        default="tensorflow/tf-cluster-train:v1.0",
         required=False)
+    parser.add_argument(
+        "--train_entrypoint",
+        required=True)
     parser.add_argument(
         "--ps_replicas",
         type=int,
@@ -75,10 +78,6 @@ if __name__ == "__main__":
         "--worker_replicas",
         type=eval,
         required=True)
-    parser.add_argument(
-        "--parameters",
-        default="[]",
-        type=eval)
     parser.add_argument(
         "--job_port",
         default="2222")

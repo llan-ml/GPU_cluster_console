@@ -10,6 +10,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import subprocess
 import argparse
 import jinja2
 
@@ -34,6 +35,10 @@ def main(args):
     properties = dict(args._get_kwargs())
     dirname = ROOT_DIR + "../gpu_cluster_storage/{}/{}/k8s_config".format(
         properties["namespace"], properties["name"])
+    nvidia_driver_version = subprocess.check_output(
+            "nvidia-smi -a | grep 'Driver Version' | awk '{printf $4}'",
+            shell=True)
+    properties["nvidia_driver_version"] = nvidia_driver_version
     os.system("mkdir -p {}".format(dirname))
     for jinja_file in JINJA_FILE_0:
         extension = "yaml"
@@ -84,9 +89,9 @@ if __name__ == "__main__":
 #    parser.add_argument(
 #        "--tensorboard_port",
 #        default="6006")
-    parser.add_argument(
-        "--nvidia_driver_version",
-        default="375.26")
+#    parser.add_argument(
+#        "--nvidia_driver_version",
+#        default="375.26")
     parser.add_argument(
         "--nfs_image",
         default="gcr.io/google-samples/nfs-server:1.2")

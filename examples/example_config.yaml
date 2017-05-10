@@ -3,7 +3,7 @@ kubernetes:
   name: test
   num_gpus: 4
 tensorflow:
-  train_entrypoint: ./examples/exmaple_distribute_tf.py
+  train_entrypoint: ./examples/example_distribute_tf.py
   train_files: ./examples/example_distribute_tf.py
 data:
   data_dir: ./examples/data
